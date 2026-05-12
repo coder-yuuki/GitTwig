@@ -8,10 +8,16 @@ MARKETING_VERSION="${MARKETING_VERSION:-0.1.0}"
 BUILD_NUMBER="${BUILD_NUMBER:-$(git rev-list --count HEAD 2>/dev/null || printf '1')}"
 CONFIGURATION="${CONFIGURATION:-release}"
 DIST_DIR="${DIST_DIR:-dist}"
+ICON_SOURCE="${ICON_SOURCE:-Assets/AppIcon.icns}"
 APP_BUNDLE="$DIST_DIR/$APP_NAME.app"
 STAGING_DIR="$DIST_DIR/staging"
 ZIP_PATH="$DIST_DIR/$APP_NAME-$MARKETING_VERSION.zip"
 DMG_PATH="$DIST_DIR/$APP_NAME-$MARKETING_VERSION.dmg"
+
+if [[ ! -f "$ICON_SOURCE" ]]; then
+    printf 'Missing app icon: %s\n' "$ICON_SOURCE" >&2
+    exit 1
+fi
 
 swift build -c "$CONFIGURATION" --product "$PRODUCT_NAME"
 
@@ -20,6 +26,7 @@ mkdir -p "$APP_BUNDLE/Contents/MacOS" "$APP_BUNDLE/Contents/Resources"
 
 cp ".build/$CONFIGURATION/$PRODUCT_NAME" "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
 chmod 755 "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
+cp "$ICON_SOURCE" "$APP_BUNDLE/Contents/Resources/$APP_NAME.icns"
 
 cat > "$APP_BUNDLE/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -36,6 +43,8 @@ cat > "$APP_BUNDLE/Contents/Info.plist" <<PLIST
     <string>$BUNDLE_ID</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
+    <key>CFBundleIconFile</key>
+    <string>$APP_NAME.icns</string>
     <key>CFBundleName</key>
     <string>$APP_NAME</string>
     <key>CFBundlePackageType</key>
