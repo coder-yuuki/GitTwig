@@ -33,7 +33,16 @@ jobs:
               exit 1
           fi
 
+          IFS='.' read -r major minor patch extra <<< "$version"
+          if [[ -n "${extra:-}" || ! "$major" =~ ^[0-9]+$ || ! "$minor" =~ ^[0-9]+$ || ! "$patch" =~ ^[0-9]+$ ]]; then
+              printf 'Release version must be a numeric SemVer tag like v0.1.0. Got: %s\n' "$tag" >&2
+              exit 1
+          fi
+
+          build_number=$((10#$major * 10000 + 10#$minor * 100 + 10#$patch))
+
           printf 'MARKETING_VERSION=%s\n' "$version" >> "$GITHUB_ENV"
+          printf 'BUILD_NUMBER=%s\n' "$build_number" >> "$GITHUB_ENV"
           printf 'RELEASE_TAG=%s\n' "$tag" >> "$GITHUB_ENV"
 
       - name: Configure signing
@@ -99,6 +108,7 @@ jobs:
 
           NOTARIZE=1 \
           MARKETING_VERSION="$MARKETING_VERSION" \
+          BUILD_NUMBER="$BUILD_NUMBER" \
           CODESIGN_IDENTITY="$CODESIGN_IDENTITY" \
           NOTARY_KEYCHAIN_PROFILE="$NOTARY_KEYCHAIN_PROFILE" \
           scripts/package-macos.sh

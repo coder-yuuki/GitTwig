@@ -9,6 +9,13 @@ APP_NAME="GitTwig"
 DMG_PATH="dist/$APP_NAME-$VERSION.dmg"
 ZIP_PATH="dist/$APP_NAME-$VERSION.zip"
 
+IFS='.' read -r MAJOR MINOR PATCH EXTRA <<< "$VERSION"
+if [[ -n "${EXTRA:-}" || ! "$MAJOR" =~ ^[0-9]+$ || ! "$MINOR" =~ ^[0-9]+$ || ! "$PATCH" =~ ^[0-9]+$ ]]; then
+    printf 'Version must be numeric SemVer like 0.1.0. Got: %s\n' "$VERSION" >&2
+    exit 1
+fi
+BUILD_NUMBER=$((10#$MAJOR * 10000 + 10#$MINOR * 100 + 10#$PATCH))
+
 if [[ -n "$(git status --porcelain)" ]]; then
     printf 'Working tree must be clean before creating a release.\n' >&2
     exit 1
@@ -39,6 +46,7 @@ fi
 : "${NOTARY_KEYCHAIN_PROFILE:?NOTARY_KEYCHAIN_PROFILE is required}"
 
 MARKETING_VERSION="$VERSION" \
+BUILD_NUMBER="$BUILD_NUMBER" \
 CODESIGN_IDENTITY="$CODESIGN_IDENTITY" \
 NOTARIZE=1 \
 scripts/package-macos.sh
