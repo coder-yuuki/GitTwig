@@ -14,9 +14,24 @@ STAGING_DIR="$DIST_DIR/staging"
 ZIP_PATH="$DIST_DIR/$APP_NAME-$MARKETING_VERSION.zip"
 DMG_PATH="$DIST_DIR/$APP_NAME-$MARKETING_VERSION.dmg"
 
+create_archives() {
+    rm -rf "$STAGING_DIR" "$ZIP_PATH" "$DMG_PATH"
+    mkdir -p "$STAGING_DIR"
+    cp -R "$APP_BUNDLE" "$STAGING_DIR/"
+    ln -s /Applications "$STAGING_DIR/Applications"
+
+    ditto -c -k --keepParent "$APP_BUNDLE" "$ZIP_PATH"
+    hdiutil create -volname "$APP_NAME" -srcfolder "$STAGING_DIR" -ov -format UDZO "$DMG_PATH"
+}
+
 if [[ ! -f "$ICON_SOURCE" ]]; then
     printf 'Missing app icon: %s\n' "$ICON_SOURCE" >&2
     exit 1
+fi
+
+if [[ "${NOTARIZE:-0}" == "1" ]]; then
+    : "${CODESIGN_IDENTITY:?CODESIGN_IDENTITY is required when NOTARIZE=1}"
+    : "${NOTARY_KEYCHAIN_PROFILE:?NOTARY_KEYCHAIN_PROFILE is required when NOTARIZE=1}"
 fi
 
 swift build -c "$CONFIGURATION" --product "$PRODUCT_NAME"
@@ -73,20 +88,21 @@ fi
 
 codesign --verify --deep --strict --verbose=2 "$APP_BUNDLE"
 
-mkdir -p "$STAGING_DIR"
-cp -R "$APP_BUNDLE" "$STAGING_DIR/"
-ln -s /Applications "$STAGING_DIR/Applications"
-
-ditto -c -k --keepParent "$APP_BUNDLE" "$ZIP_PATH"
-hdiutil create -volname "$APP_NAME" -srcfolder "$STAGING_DIR" -ov -format UDZO "$DMG_PATH"
+create_archives
 
 if [[ "${NOTARIZE:-0}" == "1" ]]; then
-    : "${NOTARY_KEYCHAIN_PROFILE:?NOTARY_KEYCHAIN_PROFILE is required when NOTARIZE=1}"
+    xcrun notarytool submit "$ZIP_PATH" \
+        --keychain-profile "$NOTARY_KEYCHAIN_PROFILE" \
+        --wait
+    xcrun stapler staple "$APP_BUNDLE"
+    xcrun stapler validate "$APP_BUNDLE"
 
+    create_archives
     xcrun notarytool submit "$DMG_PATH" \
         --keychain-profile "$NOTARY_KEYCHAIN_PROFILE" \
         --wait
     xcrun stapler staple "$DMG_PATH"
+    xcrun stapler validate "$DMG_PATH"
 fi
 
 printf '%s\n' "$ZIP_PATH"

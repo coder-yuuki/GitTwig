@@ -57,6 +57,14 @@ xcrun notarytool store-credentials GitTwigNotary
 NOTARIZE=1 NOTARY_KEYCHAIN_PROFILE=GitTwigNotary scripts/package-macos.sh
 ```
 
+## Release
+
+```bash
+NOTARY_KEYCHAIN_PROFILE=GitTwigNotary scripts/release-github.sh 0.1.0
+```
+
+The release script requires a Developer ID Application certificate and creates a notarized GitHub Release.
+
 ## License
 
 MIT
