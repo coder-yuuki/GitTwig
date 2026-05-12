@@ -53,7 +53,7 @@ struct SettingsView: View {
                 }
             }
             .listStyle(.inset)
-            .frame(minHeight: 220)
+            .frame(minHeight: 160)
 
             VStack(alignment: .leading, spacing: 6) {
                 Stepper(
@@ -66,6 +66,10 @@ struct SettingsView: View {
                     step: 5
                 )
             }
+
+            Divider()
+
+            AboutAppView()
 
             if let errorMessage = viewModel.errorMessage {
                 Text(errorMessage)
@@ -95,6 +99,78 @@ struct SettingsView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
+    }
+}
+
+private struct AboutAppView: View {
+    private let appInfo = AppInfo.current
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("About")
+                .font(.subheadline.weight(.semibold))
+
+            VStack(alignment: .leading, spacing: 5) {
+                InfoRow(label: "Version", value: appInfo.versionText)
+                InfoRow(label: "Developer", value: "野久知優希 (@coder_yuuki)")
+                InfoRow(label: "License", value: "MIT")
+
+                Text(appInfo.copyrightText)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Link(destination: URL(string: "https://x.com/coder_yuuki")!) {
+                Label("Open @coder_yuuki on X", systemImage: "arrow.up.right.square")
+            }
+        }
+    }
+}
+
+private struct InfoRow: View {
+    var label: String
+    var value: String
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(label)
+                .foregroundStyle(.secondary)
+                .frame(width: 68, alignment: .leading)
+
+            Text(value)
+                .textSelection(.enabled)
+        }
+        .font(.caption)
+    }
+}
+
+private struct AppInfo {
+    var versionText: String
+    var copyrightText: String
+
+    static var current: AppInfo {
+        let bundle = Bundle.main
+        let shortVersion = bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+        let buildNumber = bundle.object(forInfoDictionaryKey: "CFBundleVersion") as? String
+        let copyright = bundle.object(forInfoDictionaryKey: "NSHumanReadableCopyright") as? String
+
+        return AppInfo(
+            versionText: formattedVersion(shortVersion: shortVersion, buildNumber: buildNumber),
+            copyrightText: copyright ?? "Copyright © 2026 野久知優希"
+        )
+    }
+
+    private static func formattedVersion(shortVersion: String?, buildNumber: String?) -> String {
+        switch (shortVersion?.isEmpty == false ? shortVersion : nil, buildNumber?.isEmpty == false ? buildNumber : nil) {
+        case let (version?, build?):
+            "\(version) (\(build))"
+        case let (version?, nil):
+            version
+        case let (nil, build?):
+            "Build \(build)"
+        case (nil, nil):
+            "Development"
+        }
     }
 }
 

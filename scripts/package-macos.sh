@@ -105,7 +105,7 @@ cat > "$APP_BUNDLE/Contents/Info.plist" <<PLIST
     <key>LSUIElement</key>
     <true/>
     <key>NSHumanReadableCopyright</key>
-    <string>Copyright © 2026 coder-yuuki</string>
+    <string>Copyright © 2026 野久知優希</string>
     <key>SUFeedURL</key>
     <string>https://github.com/coder-yuuki/GitTwig/releases/latest/download/appcast.xml</string>
     <key>SUPublicEDKey</key>
