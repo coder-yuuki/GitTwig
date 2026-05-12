@@ -1,0 +1,130 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  build-release:
+    if: github.repository == 'coder-yuuki/GitTwig'
+    runs-on: macos-15
+    timeout-minutes: 30
+    env:
+      NOTARY_KEYCHAIN_PROFILE: GitTwigNotary
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Resolve version
+        run: |
+          set -euo pipefail
+          tag="$GITHUB_REF_NAME"
+          version="${tag#v}"
+
+          if [[ "$tag" == "$version" || -z "$version" ]]; then
+              printf 'Release tags must look like v0.1.0. Got: %s\n' "$tag" >&2
+              exit 1
+          fi
+
+          printf 'MARKETING_VERSION=%s\n' "$version" >> "$GITHUB_ENV"
+          printf 'RELEASE_TAG=%s\n' "$tag" >> "$GITHUB_ENV"
+
+      - name: Configure signing
+        env:
+          CERTIFICATE_BASE64: ${{ secrets.MACOS_DEVELOPER_ID_CERTIFICATE_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.MACOS_DEVELOPER_ID_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+        run: |
+          set -euo pipefail
+
+          : "${CERTIFICATE_BASE64:?Missing MACOS_DEVELOPER_ID_CERTIFICATE_BASE64 secret}"
+          : "${CERTIFICATE_PASSWORD:?Missing MACOS_DEVELOPER_ID_CERTIFICATE_PASSWORD secret}"
+          : "${APPLE_ID:?Missing APPLE_ID secret}"
+          : "${APPLE_TEAM_ID:?Missing APPLE_TEAM_ID secret}"
+          : "${APPLE_APP_SPECIFIC_PASSWORD:?Missing APPLE_APP_SPECIFIC_PASSWORD secret}"
+
+          certificate_path="$RUNNER_TEMP/developer-id.p12"
+          keychain_path="$RUNNER_TEMP/app-signing.keychain-db"
+          keychain_password="$(uuidgen)"
+
+          printf '%s' "$CERTIFICATE_BASE64" | base64 -d -o "$certificate_path"
+
+          security create-keychain -p "$keychain_password" "$keychain_path"
+          security set-keychain-settings -lut 21600 "$keychain_path"
+          security unlock-keychain -p "$keychain_password" "$keychain_path"
+          security import "$certificate_path" \
+              -k "$keychain_path" \
+              -P "$CERTIFICATE_PASSWORD" \
+              -T /usr/bin/codesign \
+              -T /usr/bin/security
+          security set-key-partition-list \
+              -S apple-tool:,apple:,codesign: \
+              -s \
+              -k "$keychain_password" \
+              "$keychain_path"
+          security list-keychains -d user -s "$keychain_path"
+          security default-keychain -s "$keychain_path"
+
+          identity="$(
+              security find-identity -v -p codesigning "$keychain_path" |
+                  awk -F '"' '/Developer ID Application/ { print $2; exit }'
+          )"
+
+          if [[ -z "$identity" ]]; then
+              printf 'The imported certificate does not contain a Developer ID Application identity.\n' >&2
+              exit 1
+          fi
+
+          xcrun notarytool store-credentials "$NOTARY_KEYCHAIN_PROFILE" \
+              --apple-id "$APPLE_ID" \
+              --team-id "$APPLE_TEAM_ID" \
+              --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+              --keychain "$keychain_path"
+
+          printf 'CODESIGN_IDENTITY=%s\n' "$identity" >> "$GITHUB_ENV"
+          printf 'SIGNING_KEYCHAIN_PATH=%s\n' "$keychain_path" >> "$GITHUB_ENV"
+
+      - name: Package and notarize
+        run: |
+          set -euo pipefail
+
+          NOTARIZE=1 \
+          MARKETING_VERSION="$MARKETING_VERSION" \
+          CODESIGN_IDENTITY="$CODESIGN_IDENTITY" \
+          NOTARY_KEYCHAIN_PROFILE="$NOTARY_KEYCHAIN_PROFILE" \
+          scripts/package-macos.sh
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          dmg_path="dist/GitTwig-$MARKETING_VERSION.dmg"
+          zip_path="dist/GitTwig-$MARKETING_VERSION.zip"
+
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+              gh release upload "$RELEASE_TAG" "$dmg_path" "$zip_path" --clobber
+          else
+              gh release create "$RELEASE_TAG" "$dmg_path" "$zip_path" \
+                  --title "GitTwig $MARKETING_VERSION" \
+                  --notes "GitTwig $MARKETING_VERSION"
+          fi
+
+      - name: Cleanup keychain
+        if: always()
+        run: |
+          set -euo pipefail
+
+          if [[ -n "${SIGNING_KEYCHAIN_PATH:-}" ]]; then
+              security delete-keychain "$SIGNING_KEYCHAIN_PATH" || true
+          fi

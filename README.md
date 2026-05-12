@@ -65,6 +65,26 @@ NOTARY_KEYCHAIN_PROFILE=GitTwigNotary scripts/release-github.sh 0.1.0
 
 The release script requires a Developer ID Application certificate and creates a notarized GitHub Release.
 
+## Automated Release
+
+Pushing a version tag builds notarized release assets and uploads them to a GitHub Release:
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+Required GitHub Actions secrets:
+
+- `MACOS_DEVELOPER_ID_CERTIFICATE_BASE64`
+- `MACOS_DEVELOPER_ID_CERTIFICATE_PASSWORD`
+- `APPLE_ID`
+- `APPLE_TEAM_ID`
+- `APPLE_APP_SPECIFIC_PASSWORD`
+
+`MACOS_DEVELOPER_ID_CERTIFICATE_BASE64` must be a base64-encoded `.p12` export of a Developer ID Application certificate.
+Do not commit the `.p12` file, certificate password, Apple ID password, or app-specific password.
+
 ## License
 
 MIT
