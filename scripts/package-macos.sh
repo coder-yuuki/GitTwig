@@ -108,6 +108,12 @@ cat > "$APP_BUNDLE/Contents/Info.plist" <<PLIST
     <string>Copyright © 2026 野久知優希</string>
     <key>SUFeedURL</key>
     <string>https://github.com/coder-yuuki/GitTwig/releases/latest/download/appcast.xml</string>
+    <key>SUEnableAutomaticChecks</key>
+    <true/>
+    <key>SUEnableSystemProfiling</key>
+    <false/>
+    <key>SUSendProfileInfo</key>
+    <false/>
     <key>SUPublicEDKey</key>
     <string>LtjngVaI/SxPM3ik39+ZxU8unE22ERWhwaBbvly0TEY=</string>
 </dict>

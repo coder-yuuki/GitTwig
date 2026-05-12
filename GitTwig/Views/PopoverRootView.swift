@@ -32,7 +32,22 @@ struct PopoverRootView: View {
 
             GitGraphView(
                 snapshot: viewModel.currentSnapshot,
-                isLoading: viewModel.isLoading
+                isLoading: viewModel.isLoading,
+                repository: viewModel.selectedRepository,
+                onRefresh: {
+                    Task {
+                        await viewModel.refreshSelectedRepository()
+                    }
+                },
+                onChooseAgain: { repository in
+                    viewModel.chooseAgain(for: repository)
+                },
+                onOpenInFinder: { repository in
+                    viewModel.openInFinder(repository)
+                },
+                onRemove: { repository in
+                    viewModel.removeRepository(repository)
+                }
             )
 
             Divider()

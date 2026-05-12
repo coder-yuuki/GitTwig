@@ -33,62 +33,60 @@ struct SettingsView: View {
     }
 
     private var content: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                Text("Repositories")
-                    .font(.subheadline.weight(.semibold))
+        ScrollView(.vertical) {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack {
+                    Text("Repositories")
+                        .font(.subheadline.weight(.semibold))
 
-                Spacer()
+                    Spacer()
 
-                Button {
-                    viewModel.addRepository()
-                } label: {
-                    Label("Add", systemImage: "folder.badge.plus")
+                    Button {
+                        viewModel.addRepository()
+                    } label: {
+                        Label("Add", systemImage: "folder.badge.plus")
+                    }
+                }
+
+                List {
+                    ForEach(viewModel.repositories) { repository in
+                        SettingsRepositoryRow(viewModel: viewModel, repository: repository)
+                    }
+                }
+                .listStyle(.inset)
+                .frame(minHeight: 160)
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Stepper(
+                        "Commit limit: \(viewModel.commitLimit)",
+                        value: Binding(
+                            get: { viewModel.commitLimit },
+                            set: { viewModel.updateCommitLimit($0) }
+                        ),
+                        in: 5...200,
+                        step: 5
+                    )
+                }
+
+                SoftwareUpdateSettingsView()
+
+                Divider()
+
+                AboutAppView()
+
+                if let errorMessage = viewModel.errorMessage {
+                    Text(errorMessage)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
-
-            List {
-                ForEach(viewModel.repositories) { repository in
-                    SettingsRepositoryRow(viewModel: viewModel, repository: repository)
-                }
-            }
-            .listStyle(.inset)
-            .frame(minHeight: 160)
-
-            VStack(alignment: .leading, spacing: 6) {
-                Stepper(
-                    "Commit limit: \(viewModel.commitLimit)",
-                    value: Binding(
-                        get: { viewModel.commitLimit },
-                        set: { viewModel.updateCommitLimit($0) }
-                    ),
-                    in: 5...200,
-                    step: 5
-                )
-            }
-
-            Divider()
-
-            AboutAppView()
-
-            if let errorMessage = viewModel.errorMessage {
-                Text(errorMessage)
-                    .font(.caption)
-                    .foregroundStyle(.red)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+            .padding(12)
         }
-        .padding(12)
     }
 
     private var footer: some View {
         HStack {
-            Button {
-                SoftwareUpdateController.shared.updater.checkForUpdates()
-            } label: {
-                Label("Check for Updates", systemImage: "arrow.triangle.2.circlepath")
-            }
-
             Spacer()
 
             Button(role: .destructive) {
@@ -99,6 +97,62 @@ struct SettingsView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
+    }
+}
+
+private struct SoftwareUpdateSettingsView: View {
+    @State private var automaticallyChecksForUpdates = false
+    @State private var lastUpdateCheckText = "Last checked: never"
+    @State private var canCheckForUpdates = true
+
+    private var updater: SoftwareUpdateController {
+        SoftwareUpdateController.shared
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Updates")
+                .font(.subheadline.weight(.semibold))
+
+            HStack(alignment: .center, spacing: 10) {
+                Toggle(
+                    "Automatically check for updates",
+                    isOn: Binding(
+                        get: { automaticallyChecksForUpdates },
+                        set: { newValue in
+                            updater.updater.automaticallyChecksForUpdates = newValue
+                            refreshState()
+                        }
+                    )
+                )
+
+                Spacer()
+
+                Button {
+                    updater.updater.checkForUpdates()
+                    refreshState()
+                } label: {
+                    Label("Check Now", systemImage: "arrow.triangle.2.circlepath")
+                }
+                .disabled(!canCheckForUpdates)
+            }
+
+            Text(lastUpdateCheckText)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .onAppear(perform: refreshState)
+    }
+
+    private func refreshState() {
+        automaticallyChecksForUpdates = updater.updater.automaticallyChecksForUpdates
+        canCheckForUpdates = updater.updater.canCheckForUpdates
+
+        if let lastUpdateCheckDate = updater.updater.lastUpdateCheckDate {
+            lastUpdateCheckText = "Last checked: \(lastUpdateCheckDate.gitTwigRelativeText)"
+        } else {
+            lastUpdateCheckText = "Last checked: never"
+        }
     }
 }
 
@@ -120,9 +174,17 @@ private struct AboutAppView: View {
                     .foregroundStyle(.secondary)
             }
 
-            HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 6) {
                 Link(destination: URL(string: "https://github.com/coder-yuuki/GitTwig")!) {
                     Label("GitHub Repository", systemImage: "chevron.left.forwardslash.chevron.right")
+                }
+
+                Link(destination: URL(string: "https://github.com/coder-yuuki/GitTwig/issues")!) {
+                    Label("Report Issue", systemImage: "exclamationmark.bubble")
+                }
+
+                Link(destination: URL(string: "https://github.com/coder-yuuki/GitTwig/releases")!) {
+                    Label("View Releases", systemImage: "tag")
                 }
 
                 Link(destination: URL(string: "https://x.com/coder_yuuki")!) {

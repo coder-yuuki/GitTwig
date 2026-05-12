@@ -23,6 +23,12 @@ It does not run:
 
 GitTwig stores repository paths and security-scoped bookmarks locally in `UserDefaults`.
 
+## Privacy
+
+GitTwig does not collect analytics, upload repository contents, or send repository paths to a server.
+
+Network access is used only for Sparkle update checks against this repository's GitHub Releases appcast. Sparkle system profiling is disabled in packaged builds.
+
 ## Requirements
 
 - macOS 13 or later

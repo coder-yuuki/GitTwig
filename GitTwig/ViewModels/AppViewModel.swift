@@ -91,6 +91,23 @@ final class AppViewModel: ObservableObject {
         }
     }
 
+    func chooseAgain(for repository: Repository) {
+        let panel = repositoryPanel(
+            title: "Choose Repository Again",
+            message: "Choose the Git repository folder for \(repository.displayName).",
+            prompt: "Choose",
+            directoryURL: URL(fileURLWithPath: repository.path)
+        )
+
+        guard panel.runModal() == .OK, let url = panel.url else {
+            return
+        }
+
+        Task {
+            await updateRepository(repository, to: url)
+        }
+    }
+
     func removeRepository(_ repository: Repository) {
         repositories.removeAll { $0.id == repository.id }
         summariesByRepositoryID[repository.id] = nil
@@ -204,6 +221,35 @@ final class AppViewModel: ObservableObject {
         NSApplication.shared.terminate(nil)
     }
 
+    func openInFinder(_ repository: Repository) {
+        let url = existingFinderURL(for: repository.path)
+        NSWorkspace.shared.activateFileViewerSelecting([url])
+    }
+
+    private func repositoryPanel(
+        title: String,
+        message: String,
+        prompt: String,
+        directoryURL: URL
+    ) -> NSOpenPanel {
+        let panel = NSOpenPanel()
+        panel.title = title
+        panel.message = message
+        panel.prompt = prompt
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.canCreateDirectories = false
+        panel.resolvesAliases = true
+        panel.directoryURL = directoryURL
+        panel.level = .floating
+
+        NSApplication.shared.activate(ignoringOtherApps: true)
+        panel.orderFrontRegardless()
+
+        return panel
+    }
+
     private func addRepository(at url: URL) async {
         isLoading = true
         errorMessage = nil
@@ -243,6 +289,52 @@ final class AppViewModel: ObservableObject {
         isLoading = false
     }
 
+    private func updateRepository(_ repository: Repository, to url: URL) async {
+        isLoading = true
+        errorMessage = nil
+
+        do {
+            let oldPath = repository.path
+            let topLevelPath = try await gitService.topLevelPath(for: url.path)
+
+            if let existing = repositories.first(where: { $0.id != repository.id && $0.path == topLevelPath }) {
+                selectRepository(existing)
+                errorMessage = "That repository is already registered."
+                isLoading = false
+                return
+            }
+
+            guard let index = repositories.firstIndex(where: { $0.id == repository.id }) else {
+                isLoading = false
+                return
+            }
+
+            let topLevelURL = URL(fileURLWithPath: topLevelPath)
+            let bookmarkData = try? topLevelURL.bookmarkData(
+                options: [.withSecurityScope],
+                includingResourceValuesForKeys: nil,
+                relativeTo: nil
+            )
+
+            let oldDefaultName = PathDisplayName.name(for: oldPath)
+            if repositories[index].displayName == oldDefaultName {
+                repositories[index].displayName = PathDisplayName.name(for: topLevelPath)
+            }
+            repositories[index].path = topLevelPath
+            repositories[index].bookmarkData = bookmarkData
+            selectedRepositoryID = repositories[index].id
+            currentSnapshot = nil
+            saveSettings()
+
+            await refreshSelectedRepository()
+            await refreshAllRepositorySummaries()
+        } catch {
+            errorMessage = "Selected folder is not a Git repository.\n\n\(error.localizedDescription)"
+        }
+
+        isLoading = false
+    }
+
     private func saveSettings() {
         store.save(
             AppSettings(
@@ -251,6 +343,21 @@ final class AppViewModel: ObservableObject {
                 commitLimit: commitLimit
             )
         )
+    }
+
+    private func existingFinderURL(for path: String) -> URL {
+        var url = URL(fileURLWithPath: path)
+        var isDirectory: ObjCBool = false
+
+        while !FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) {
+            let parent = url.deletingLastPathComponent()
+            if parent.path == url.path {
+                return URL(fileURLWithPath: "/")
+            }
+            url = parent
+        }
+
+        return url
     }
 }
 

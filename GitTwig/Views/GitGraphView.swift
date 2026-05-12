@@ -3,17 +3,24 @@ import SwiftUI
 struct GitGraphView: View {
     var snapshot: RepositorySnapshot?
     var isLoading: Bool
+    var repository: Repository?
+    var onRefresh: () -> Void
+    var onChooseAgain: (Repository) -> Void
+    var onOpenInFinder: (Repository) -> Void
+    var onRemove: (Repository) -> Void
 
     var body: some View {
         ZStack(alignment: .topLeading) {
             Color(nsColor: .textBackgroundColor)
 
             if let snapshot {
-                if snapshot.errorMessage != nil || snapshot.graphRows.isEmpty {
+                if snapshot.errorMessage != nil {
+                    repositoryErrorView(snapshot: snapshot)
+                } else if snapshot.graphRows.isEmpty {
                     ScrollView(.vertical) {
                         Text(snapshot.graphText)
                             .font(.system(.caption, design: .monospaced))
-                            .foregroundColor(snapshot.errorMessage == nil ? .primary : .red)
+                            .foregroundColor(.primary)
                             .textSelection(.enabled)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(12)
@@ -47,6 +54,49 @@ struct GitGraphView: View {
                     .padding(10)
                     .frame(maxWidth: .infinity, alignment: .trailing)
             }
+        }
+    }
+
+    private func repositoryErrorView(snapshot: RepositorySnapshot) -> some View {
+        ScrollView(.vertical) {
+            VStack(alignment: .leading, spacing: 12) {
+                Text(snapshot.graphText)
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundColor(.red)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                if let repository {
+                    HStack(spacing: 8) {
+                        Button {
+                            onRefresh()
+                        } label: {
+                            Label("Refresh", systemImage: "arrow.clockwise")
+                        }
+
+                        Button {
+                            onChooseAgain(repository)
+                        } label: {
+                            Label("Choose Again", systemImage: "folder")
+                        }
+
+                        Button {
+                            onOpenInFinder(repository)
+                        } label: {
+                            Label("Finder", systemImage: "finder")
+                        }
+
+                        Spacer()
+
+                        Button(role: .destructive) {
+                            onRemove(repository)
+                        } label: {
+                            Label("Remove", systemImage: "trash")
+                        }
+                    }
+                }
+            }
+            .padding(12)
         }
     }
 
