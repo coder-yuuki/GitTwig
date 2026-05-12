@@ -4,7 +4,9 @@ struct MenuBarLabelView: View {
     @ObservedObject var viewModel: AppViewModel
 
     var body: some View {
-        Text(viewModel.menuBarTitle())
-            .lineLimit(1)
+        Image(systemName: "point.3.connected.trianglepath.dotted")
+            .symbolRenderingMode(.hierarchical)
+            .accessibilityLabel(viewModel.menuBarTitle())
+            .help(viewModel.menuBarTitle())
     }
 }
