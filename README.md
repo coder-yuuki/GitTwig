@@ -85,6 +85,20 @@ Required GitHub Actions secrets:
 `MACOS_DEVELOPER_ID_CERTIFICATE_BASE64` must be a base64-encoded `.p12` export of a Developer ID Application certificate.
 Do not commit the `.p12` file, certificate password, Apple ID password, or app-specific password.
 
+The `gh secret set` commands can be run from any directory when `--repo` is provided:
+
+```bash
+base64 -i DeveloperID.p12 -o DeveloperID.p12.base64
+
+gh secret set MACOS_DEVELOPER_ID_CERTIFICATE_BASE64 --repo coder-yuuki/GitTwig < DeveloperID.p12.base64
+gh secret set MACOS_DEVELOPER_ID_CERTIFICATE_PASSWORD --repo coder-yuuki/GitTwig
+gh secret set APPLE_ID --repo coder-yuuki/GitTwig
+gh secret set APPLE_TEAM_ID --repo coder-yuuki/GitTwig
+gh secret set APPLE_APP_SPECIFIC_PASSWORD --repo coder-yuuki/GitTwig
+
+rm -f DeveloperID.p12 DeveloperID.p12.base64
+```
+
 ## License
 
 MIT
