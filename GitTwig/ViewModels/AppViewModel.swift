@@ -46,7 +46,7 @@ final class AppViewModel: ObservableObject {
         return repositories.first { $0.id == selectedRepositoryID }
     }
 
-    func menuBarTitle(maxLength: Int = 34) -> String {
+    func menuBarTitle(maxLength: Int = 24) -> String {
         guard let repository = selectedRepository else {
             return "\u{2442} GitTwig"
         }
@@ -58,8 +58,15 @@ final class AppViewModel: ObservableObject {
         let status = currentSnapshot?.statusText
             ?? summariesByRepositoryID[repository.id]?.statusText
             ?? ""
-        let rawTitle = "\u{2442} \(name) / \(branch) \(status)"
-        return rawTitle.gitTwigTruncated(to: maxLength)
+        let visibleStatus = status == "\u{2713}" ? "" : status
+        let suffix = visibleStatus.isEmpty ? "" : " \(visibleStatus)"
+        let titleBudget = max(maxLength - "\u{2442} ".count - suffix.count, 8)
+        let splitBudget = max(titleBudget - 1, 7)
+        let nameBudget = max(4, splitBudget / 2)
+        let branchBudget = max(3, splitBudget - nameBudget)
+        let compactTitle = "\(name.gitTwigTruncated(to: nameBudget)):\(branch.gitTwigTruncated(to: branchBudget))"
+
+        return "\u{2442} \(compactTitle)\(suffix)".gitTwigTruncated(to: maxLength)
     }
 
     func summary(for repository: Repository) -> RepositorySummary? {
