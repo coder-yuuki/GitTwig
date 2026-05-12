@@ -79,6 +79,12 @@ struct SettingsView: View {
 
     private var footer: some View {
         HStack {
+            Button {
+                SoftwareUpdateController.shared.updater.checkForUpdates()
+            } label: {
+                Label("Check for Updates", systemImage: "arrow.triangle.2.circlepath")
+            }
+
             Spacer()
 
             Button(role: .destructive) {

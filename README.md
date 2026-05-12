@@ -81,8 +81,10 @@ Required GitHub Actions secrets:
 - `APPLE_ID`
 - `APPLE_TEAM_ID`
 - `APPLE_APP_SPECIFIC_PASSWORD`
+- `SPARKLE_ED_PRIVATE_KEY`
 
 `MACOS_DEVELOPER_ID_CERTIFICATE_BASE64` must be a base64-encoded `.p12` export of a Developer ID Application certificate.
+`SPARKLE_ED_PRIVATE_KEY` must be the exported Sparkle EdDSA private key used to sign appcast entries.
 Do not commit the `.p12` file, certificate password, Apple ID password, or app-specific password.
 
 The `gh secret set` commands can be run from any directory when `--repo` is provided:
@@ -95,6 +97,7 @@ gh secret set MACOS_DEVELOPER_ID_CERTIFICATE_PASSWORD --repo coder-yuuki/GitTwig
 gh secret set APPLE_ID --repo coder-yuuki/GitTwig
 gh secret set APPLE_TEAM_ID --repo coder-yuuki/GitTwig
 gh secret set APPLE_APP_SPECIFIC_PASSWORD --repo coder-yuuki/GitTwig
+gh secret set SPARKLE_ED_PRIVATE_KEY --repo coder-yuuki/GitTwig
 
 rm -f DeveloperID.p12 DeveloperID.p12.base64
 ```

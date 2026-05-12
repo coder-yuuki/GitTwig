@@ -13,6 +13,7 @@ APP_BUNDLE="$DIST_DIR/$APP_NAME.app"
 STAGING_DIR="$DIST_DIR/staging"
 ZIP_PATH="$DIST_DIR/$APP_NAME-$MARKETING_VERSION.zip"
 DMG_PATH="$DIST_DIR/$APP_NAME-$MARKETING_VERSION.dmg"
+SPARKLE_FRAMEWORK_PATH=""
 
 create_archives() {
     rm -rf "$STAGING_DIR" "$ZIP_PATH" "$DMG_PATH"
@@ -36,12 +37,22 @@ fi
 
 swift build -c "$CONFIGURATION" --product "$PRODUCT_NAME"
 
+SPARKLE_FRAMEWORK_PATH="$(
+    find .build/artifacts -path '*/Sparkle.framework' -type d -print -quit
+)"
+
+if [[ -z "$SPARKLE_FRAMEWORK_PATH" ]]; then
+    printf 'Missing Sparkle.framework in .build/artifacts\n' >&2
+    exit 1
+fi
+
 rm -rf "$APP_BUNDLE" "$STAGING_DIR" "$ZIP_PATH" "$DMG_PATH"
-mkdir -p "$APP_BUNDLE/Contents/MacOS" "$APP_BUNDLE/Contents/Resources"
+mkdir -p "$APP_BUNDLE/Contents/MacOS" "$APP_BUNDLE/Contents/Resources" "$APP_BUNDLE/Contents/Frameworks"
 
 cp ".build/$CONFIGURATION/$PRODUCT_NAME" "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
 chmod 755 "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
 cp "$ICON_SOURCE" "$APP_BUNDLE/Contents/Resources/$APP_NAME.icns"
+cp -R "$SPARKLE_FRAMEWORK_PATH" "$APP_BUNDLE/Contents/Frameworks/"
 
 cat > "$APP_BUNDLE/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -74,6 +85,10 @@ cat > "$APP_BUNDLE/Contents/Info.plist" <<PLIST
     <true/>
     <key>NSHumanReadableCopyright</key>
     <string>Copyright © 2026 coder-yuuki</string>
+    <key>SUFeedURL</key>
+    <string>https://github.com/coder-yuuki/GitTwig/releases/latest/download/appcast.xml</string>
+    <key>SUPublicEDKey</key>
+    <string>LtjngVaI/SxPM3ik39+ZxU8unE22ERWhwaBbvly0TEY=</string>
 </dict>
 </plist>
 PLIST
@@ -81,8 +96,10 @@ PLIST
 /usr/libexec/PlistBuddy -c "Print CFBundleIdentifier" "$APP_BUNDLE/Contents/Info.plist" >/dev/null
 
 if [[ -n "${CODESIGN_IDENTITY:-}" ]]; then
+    codesign --force --timestamp --options runtime --sign "$CODESIGN_IDENTITY" "$APP_BUNDLE/Contents/Frameworks/Sparkle.framework"
     codesign --force --timestamp --options runtime --sign "$CODESIGN_IDENTITY" "$APP_BUNDLE"
 else
+    codesign --force --sign - "$APP_BUNDLE/Contents/Frameworks/Sparkle.framework"
     codesign --force --sign - "$APP_BUNDLE"
 fi
 

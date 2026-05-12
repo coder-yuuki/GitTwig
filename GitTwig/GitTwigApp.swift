@@ -5,6 +5,7 @@ import SwiftUI
 struct GitTwigApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var viewModel = AppViewModel()
+    private let softwareUpdateController = SoftwareUpdateController.shared
 
     var body: some Scene {
         MenuBarExtra {

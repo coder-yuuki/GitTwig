@@ -103,6 +103,36 @@ jobs:
           NOTARY_KEYCHAIN_PROFILE="$NOTARY_KEYCHAIN_PROFILE" \
           scripts/package-macos.sh
 
+      - name: Generate Sparkle appcast
+        env:
+          SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+
+          : "${SPARKLE_ED_PRIVATE_KEY:?Missing SPARKLE_ED_PRIVATE_KEY secret}"
+
+          appcast_source_dir="dist/appcast-source"
+          update_zip="GitTwig-$MARKETING_VERSION.zip"
+          generate_appcast="$(
+              find .build/artifacts -type f -name generate_appcast -print -quit
+          )"
+
+          if [[ -z "$generate_appcast" ]]; then
+              printf 'Missing Sparkle generate_appcast tool.\n' >&2
+              exit 1
+          fi
+
+          rm -rf "$appcast_source_dir"
+          mkdir -p "$appcast_source_dir"
+          cp "dist/$update_zip" "$appcast_source_dir/$update_zip"
+
+          printf '%s' "$SPARKLE_ED_PRIVATE_KEY" |
+              "$generate_appcast" \
+                  --ed-key-file - \
+                  --download-url-prefix "https://github.com/coder-yuuki/GitTwig/releases/download/$RELEASE_TAG/" \
+                  -o dist/appcast.xml \
+                  "$appcast_source_dir"
+
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -111,11 +141,12 @@ jobs:
 
           dmg_path="dist/GitTwig-$MARKETING_VERSION.dmg"
           zip_path="dist/GitTwig-$MARKETING_VERSION.zip"
+          appcast_path="dist/appcast.xml"
 
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-              gh release upload "$RELEASE_TAG" "$dmg_path" "$zip_path" --clobber
+              gh release upload "$RELEASE_TAG" "$dmg_path" "$zip_path" "$appcast_path" --clobber
           else
-              gh release create "$RELEASE_TAG" "$dmg_path" "$zip_path" \
+              gh release create "$RELEASE_TAG" "$dmg_path" "$zip_path" "$appcast_path" \
                   --title "GitTwig $MARKETING_VERSION" \
                   --notes "GitTwig $MARKETING_VERSION"
           fi
