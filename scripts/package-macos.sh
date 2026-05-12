@@ -49,7 +49,7 @@ cat > "$APP_BUNDLE/Contents/Info.plist" <<PLIST
     <key>LSUIElement</key>
     <true/>
     <key>NSHumanReadableCopyright</key>
-    <string>Copyright © 2026 coder-yuuki. All rights reserved.</string>
+    <string>Copyright © 2026 coder-yuuki</string>
 </dict>
 </plist>
 PLIST

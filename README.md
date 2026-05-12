@@ -56,3 +56,7 @@ xcrun notarytool store-credentials GitTwigNotary
 
 NOTARIZE=1 NOTARY_KEYCHAIN_PROFILE=GitTwigNotary scripts/package-macos.sh
 ```
+
+## License
+
+MIT
