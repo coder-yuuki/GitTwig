@@ -120,8 +120,14 @@ private struct AboutAppView: View {
                     .foregroundStyle(.secondary)
             }
 
-            Link(destination: URL(string: "https://x.com/coder_yuuki")!) {
-                Label("Open @coder_yuuki on X", systemImage: "arrow.up.right.square")
+            HStack(spacing: 12) {
+                Link(destination: URL(string: "https://github.com/coder-yuuki/GitTwig")!) {
+                    Label("GitHub Repository", systemImage: "chevron.left.forwardslash.chevron.right")
+                }
+
+                Link(destination: URL(string: "https://x.com/coder_yuuki")!) {
+                    Label("@coder_yuuki on X", systemImage: "arrow.up.right.square")
+                }
             }
         }
     }
