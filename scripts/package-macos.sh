@@ -25,6 +25,27 @@ create_archives() {
     hdiutil create -volname "$APP_NAME" -srcfolder "$STAGING_DIR" -ov -format UDZO "$DMG_PATH"
 }
 
+sign_bundle() {
+    local target="$1"
+
+    if [[ -n "${CODESIGN_IDENTITY:-}" ]]; then
+        codesign --force --timestamp --options runtime --sign "$CODESIGN_IDENTITY" "$target"
+    else
+        codesign --force --sign - "$target"
+    fi
+}
+
+sign_sparkle_framework() {
+    local framework="$APP_BUNDLE/Contents/Frameworks/Sparkle.framework"
+    local version_dir="$framework/Versions/B"
+
+    sign_bundle "$version_dir/Autoupdate"
+    sign_bundle "$version_dir/Updater.app"
+    sign_bundle "$version_dir/XPCServices/Downloader.xpc"
+    sign_bundle "$version_dir/XPCServices/Installer.xpc"
+    sign_bundle "$framework"
+}
+
 if [[ ! -f "$ICON_SOURCE" ]]; then
     printf 'Missing app icon: %s\n' "$ICON_SOURCE" >&2
     exit 1
@@ -95,13 +116,8 @@ PLIST
 
 /usr/libexec/PlistBuddy -c "Print CFBundleIdentifier" "$APP_BUNDLE/Contents/Info.plist" >/dev/null
 
-if [[ -n "${CODESIGN_IDENTITY:-}" ]]; then
-    codesign --force --timestamp --options runtime --sign "$CODESIGN_IDENTITY" "$APP_BUNDLE/Contents/Frameworks/Sparkle.framework"
-    codesign --force --timestamp --options runtime --sign "$CODESIGN_IDENTITY" "$APP_BUNDLE"
-else
-    codesign --force --sign - "$APP_BUNDLE/Contents/Frameworks/Sparkle.framework"
-    codesign --force --sign - "$APP_BUNDLE"
-fi
+sign_sparkle_framework
+sign_bundle "$APP_BUNDLE"
 
 codesign --verify --deep --strict --verbose=2 "$APP_BUNDLE"
 
