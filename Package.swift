@@ -20,9 +20,11 @@ let package = Package(
                 .product(name: "Sparkle", package: "Sparkle")
             ],
             path: "GitTwig",
+            resources: [.copy("Resources/AppIcon.png")],
             linkerSettings: [
                 .unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])
             ]
-        )
+        ),
+        .testTarget(name: "GitTwigTests", dependencies: ["GitTwig"], path: "Tests")
     ]
 )

@@ -12,6 +12,9 @@ struct RepositorySnapshot: Equatable {
     var errorMessage: String?
     var updatedAt: Date
 
+    var changedFiles: [ChangedFile] = []
+    var upstream: String? = nil
+
     var statusText: String {
         if errorMessage != nil {
             return "!"
@@ -110,4 +113,52 @@ struct RepositorySummary: Equatable {
 
         return text.isEmpty ? "\u{2713}" : text
     }
+}
+
+struct ChangedFile: Identifiable, Equatable {
+    var id: String { path }
+    var path: String
+    var status: String
+
+    static func parse(_ output: String) -> [ChangedFile] {
+        let records = output.split(separator: "\0", omittingEmptySubsequences: true)
+        var files: [ChangedFile] = []
+        var index = 0
+        while index < records.count {
+            let record = String(records[index])
+            index += 1
+            guard record.count >= 4 else { continue }
+            let status = String(record.prefix(2))
+            files.append(ChangedFile(path: String(record.dropFirst(3)), status: status))
+            if status.contains("R") || status.contains("C") { index += 1 }
+        }
+        return files
+    }
+}
+
+enum SyncAction: String, Identifiable {
+    case fetch = "Fetch", pull = "Pull", push = "Push"
+    var id: String { rawValue }
+}
+
+struct SyncTarget: Equatable {
+    var branch: String
+    var remote: String
+    var ref: String
+    var label: String { "\(remote)/\(ref.replacingOccurrences(of: "refs/heads/", with: ""))" }
+}
+
+struct SyncError: LocalizedError {
+    var message: String
+    var errorDescription: String? { message }
+}
+
+enum HistorySearchField: String, CaseIterable {
+    case message = "Message", author = "Author", hash = "Hash"
+}
+
+struct HistoryPage {
+    var rows: [GitGraphRow]
+    var hasMore: Bool
+    var revisions: [String]
 }

@@ -43,6 +43,7 @@ final class GitCommandRunner {
         "GIT_OPTIONAL_LOCKS": "0",
         "GIT_PAGER": "cat",
         "GIT_TERMINAL_PROMPT": "0",
+        "GIT_SSH_COMMAND": "ssh -oBatchMode=yes",
         "LC_ALL": "C",
         "PATH": "/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:/usr/local/bin"
     ]
@@ -82,13 +83,29 @@ final class GitCommandRunner {
             let process = Process()
             process.executableURL = URL(fileURLWithPath: executable)
             process.arguments = arguments
-            process.environment = environment
+            var commandEnvironment = environment
+            for key in ["HOME", "SSH_AUTH_SOCK", "TMPDIR"] {
+                commandEnvironment[key] = ProcessInfo.processInfo.environment[key]
+            }
+            process.environment = commandEnvironment
 
             let stdoutPipe = Pipe()
             let stderrPipe = Pipe()
             process.standardOutput = stdoutPipe
             process.standardError = stderrPipe
 
+            let output = GitOutputCollector()
+            let readers = DispatchGroup()
+            readers.enter()
+            DispatchQueue.global(qos: .utility).async {
+                output.setStdout(stdoutPipe.fileHandleForReading.readDataToEndOfFile())
+                readers.leave()
+            }
+            readers.enter()
+            DispatchQueue.global(qos: .utility).async {
+                output.setStderr(stderrPipe.fileHandleForReading.readDataToEndOfFile())
+                readers.leave()
+            }
             let completion = GitCommandCompletion(continuation: continuation)
 
             let timeoutWorkItem = DispatchWorkItem {
@@ -109,8 +126,9 @@ final class GitCommandRunner {
                     return
                 }
 
-                let stdoutData = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
-                let stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
+                readers.wait()
+                let stdoutData = output.stdout
+                let stderrData = output.stderr
                 let stdout = String(data: stdoutData, encoding: .utf8) ?? ""
                 let stderr = String(data: stderrData, encoding: .utf8) ?? ""
                 let exitCode = terminatedProcess.terminationStatus
@@ -131,6 +149,8 @@ final class GitCommandRunner {
                 )
             } catch {
                 timeoutWorkItem.cancel()
+                try? stdoutPipe.fileHandleForWriting.close()
+                try? stderrPipe.fileHandleForWriting.close()
                 completion.resume(.failure(GitCommandError.launchFailed(executable, error.localizedDescription)))
             }
         }
@@ -163,4 +183,15 @@ private final class GitCommandCompletion: @unchecked Sendable {
 
         continuation.resume(with: result)
     }
+}
+
+
+private final class GitOutputCollector: @unchecked Sendable {
+    private let lock = NSLock()
+    private var out = Data()
+    private var err = Data()
+    func setStdout(_ data: Data) { lock.lock(); defer { lock.unlock() }; out = data }
+    func setStderr(_ data: Data) { lock.lock(); defer { lock.unlock() }; err = data }
+    var stdout: Data { lock.lock(); defer { lock.unlock() }; return out }
+    var stderr: Data { lock.lock(); defer { lock.unlock() }; return err }
 }

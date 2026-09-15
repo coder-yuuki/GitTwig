@@ -10,7 +10,7 @@ struct GitTwigApp: App {
     var body: some Scene {
         MenuBarExtra {
             PopoverRootView(viewModel: viewModel)
-                .frame(width: 520, height: 480)
+                .frame(width: 520, height: 640)
                 .onAppear {
                     Task {
                         await viewModel.refreshAll()

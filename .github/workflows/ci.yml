@@ -14,5 +14,7 @@ jobs:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v5
+      - name: Test
+        run: swift test
       - name: Build
         run: swift build -c release --product GitTwig

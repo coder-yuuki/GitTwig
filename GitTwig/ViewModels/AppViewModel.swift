@@ -13,6 +13,84 @@ final class AppViewModel: ObservableObject {
     @Published var isShowingSettings: Bool
     @Published var commitLimit: Int
 
+    @Published var syncAction: SyncAction?
+    @Published var syncMessage: String?
+    @Published var syncFailed = false
+
+    func synchronize(_ action: SyncAction, target: SyncTarget, repository: Repository) async {
+        guard syncAction == nil else { return }
+        syncAction = action
+        syncMessage = nil
+        syncFailed = false
+        do {
+            try await gitService.synchronize(action, repository: repository, expected: target)
+            syncMessage = "\(repository.displayName): \(action.rawValue) completed."
+        } catch {
+            syncFailed = true
+            syncMessage = error.localizedDescription
+        }
+        await refreshSelectedRepository()
+        syncAction = nil
+    }
+
+    func syncTarget() async throws -> SyncTarget {
+        guard let repository = selectedRepository else { throw SyncError(message: "Select a repository.") }
+        return try await gitService.target(for: repository)
+    }
+
+
+    @Published var historyQuery = ""
+    @Published var historySearchField: HistorySearchField = .message
+    @Published var historyLoading = false
+    @Published var historyHasMore = false
+    @Published var historyError: String?
+    @Published var historyIdentity = UUID()
+    private var historyGeneration = UUID()
+    private var historyRevisions: [String]?
+    private var historyRows: [GitGraphRow] = []
+
+    func resetHistory() async {
+        historyGeneration = UUID()
+        historyIdentity = UUID()
+        historyLoading = false
+        historyHasMore = true
+        historyError = nil
+        historyRevisions = nil
+        historyRows = []
+        currentSnapshot?.graphRows = []
+        currentSnapshot?.graphEdges = []
+        currentSnapshot?.graphText = "Searching history…"
+        await loadMoreHistory()
+    }
+
+    func loadMoreHistory() async {
+        guard !historyLoading, historyHasMore, let repository = selectedRepository,
+              currentSnapshot?.repositoryID == repository.id else { return }
+        let generation = historyGeneration
+        historyLoading = true
+        historyError = nil
+        let query = historyQuery
+        let field = historySearchField
+        do {
+            let page = try await gitService.history(for: repository, revisions: historyRevisions,
+                offset: historyRows.count, limit: commitLimit, query: query, field: field)
+            guard generation == historyGeneration, selectedRepositoryID == repository.id,
+                  query == historyQuery, field == historySearchField else { return }
+            historyRevisions = page.revisions
+            var known = Set(historyRows.map(\.fullHash))
+            historyRows += page.rows.filter { known.insert($0.fullHash).inserted }
+            let layout = gitService.arrangeHistory(historyRows, filtered: !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            currentSnapshot?.graphRows = layout.rows
+            currentSnapshot?.graphEdges = layout.edges
+            currentSnapshot?.graphText = query.isEmpty ? "No commits yet." : "No matching commits."
+            historyHasMore = page.hasMore
+        } catch {
+            guard generation == historyGeneration, selectedRepositoryID == repository.id else { return }
+            historyError = error.localizedDescription
+        }
+        if generation == historyGeneration { historyLoading = false }
+    }
+
     private let store: RepositoryStore
     private let gitService: GitService
 
@@ -73,45 +151,32 @@ final class AppViewModel: ObservableObject {
         summariesByRepositoryID[repository.id]
     }
 
+    private var activeRepositoryPanel: NSOpenPanel?
+    private let lastRepositoryDirectoryKey = "lastRepositoryDirectory"
+
     func addRepository() {
-        let panel = NSOpenPanel()
-        panel.title = "Add Repository"
-        panel.message = "Choose a Git repository folder."
-        panel.prompt = "Add"
-        panel.canChooseFiles = true
-        panel.canChooseDirectories = true
-        panel.allowsMultipleSelection = false
-        panel.canCreateDirectories = false
-        panel.resolvesAliases = true
-        panel.directoryURL = URL(fileURLWithPath: "/")
-        panel.level = .floating
-
-        NSApplication.shared.activate(ignoringOtherApps: true)
-        panel.orderFrontRegardless()
-
-        guard panel.runModal() == .OK, let url = panel.url else {
-            return
-        }
-
-        Task {
-            await addRepository(at: url)
+        let rememberedPath = UserDefaults.standard.string(forKey: lastRepositoryDirectoryKey)
+        let preferredURL = rememberedPath.map { URL(fileURLWithPath: $0) }
+            ?? selectedRepository.map { URL(fileURLWithPath: $0.path).deletingLastPathComponent() }
+            ?? FileManager.default.homeDirectoryForCurrentUser
+        presentRepositoryPanel(
+            title: "Add Repository",
+            message: "Choose a Git repository folder. Use ⇧⌘G to enter a path.",
+            prompt: "Add",
+            directoryURL: preferredURL
+        ) { [weak self] url in
+            Task { await self?.addRepository(at: url) }
         }
     }
 
     func chooseAgain(for repository: Repository) {
-        let panel = repositoryPanel(
+        presentRepositoryPanel(
             title: "Choose Repository Again",
             message: "Choose the Git repository folder for \(repository.displayName).",
             prompt: "Choose",
             directoryURL: URL(fileURLWithPath: repository.path)
-        )
-
-        guard panel.runModal() == .OK, let url = panel.url else {
-            return
-        }
-
-        Task {
-            await updateRepository(repository, to: url)
+        ) { [weak self] url in
+            Task { await self?.updateRepository(repository, to: url) }
         }
     }
 
@@ -133,6 +198,8 @@ final class AppViewModel: ObservableObject {
     }
 
     func selectRepository(_ repository: Repository) {
+        historyGeneration = UUID()
+        historyLoading = false
         selectedRepositoryID = repository.id
         currentSnapshot = nil
         saveSettings()
@@ -142,7 +209,13 @@ final class AppViewModel: ObservableObject {
         }
     }
 
+    private var refreshGeneration = UUID()
+
     func refreshSelectedRepository() async {
+        let refresh = UUID()
+        refreshGeneration = refresh
+        historyGeneration = UUID()
+        historyLoading = false
         guard let repository = selectedRepository else {
             currentSnapshot = nil
             isLoading = false
@@ -154,6 +227,7 @@ final class AppViewModel: ObservableObject {
         errorMessage = nil
 
         let snapshot = await gitService.snapshot(for: repository, commitLimit: commitLimit)
+        guard refresh == refreshGeneration, selectedRepositoryID == repositoryID else { return }
         summariesByRepositoryID[repositoryID] = RepositorySummary(
             repositoryID: snapshot.repositoryID,
             branchName: snapshot.branchName,
@@ -169,6 +243,7 @@ final class AppViewModel: ObservableObject {
         }
 
         isLoading = false
+        await resetHistory()
     }
 
     func refreshAllRepositorySummaries() async {
@@ -233,28 +308,45 @@ final class AppViewModel: ObservableObject {
         NSWorkspace.shared.activateFileViewerSelecting([url])
     }
 
-    private func repositoryPanel(
+    private func presentRepositoryPanel(
         title: String,
         message: String,
         prompt: String,
-        directoryURL: URL
-    ) -> NSOpenPanel {
+        directoryURL: URL,
+        onSelection: @escaping (URL) -> Void
+    ) {
+        if let panel = activeRepositoryPanel {
+            panel.makeKeyAndOrderFront(nil)
+            return
+        }
+        let screen = NSScreen.screens.first { NSMouseInRect(NSEvent.mouseLocation, $0.frame, false) }
+            ?? NSApplication.shared.keyWindow?.screen
+            ?? NSScreen.main
         let panel = NSOpenPanel()
         panel.title = title
         panel.message = message
         panel.prompt = prompt
-        panel.canChooseFiles = true
+        panel.canChooseFiles = false
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = false
         panel.canCreateDirectories = false
         panel.resolvesAliases = true
-        panel.directoryURL = directoryURL
-        panel.level = .floating
-
+        panel.directoryURL = RepositoryPanelLocation.existingDirectory(startingAt: directoryURL)
+        panel.setContentSize(NSSize(width: 760, height: 500))
+        if let screen {
+            panel.setFrameOrigin(RepositoryPanelLocation.centeredOrigin(
+                panelSize: panel.frame.size, visibleFrame: screen.visibleFrame
+            ))
+        }
+        activeRepositoryPanel = panel
         NSApplication.shared.activate(ignoringOtherApps: true)
-        panel.orderFrontRegardless()
-
-        return panel
+        panel.begin { [weak self] response in
+            guard let self else { return }
+            self.activeRepositoryPanel = nil
+            guard response == .OK, let url = panel.url else { return }
+            UserDefaults.standard.set(url.deletingLastPathComponent().path, forKey: self.lastRepositoryDirectoryKey)
+            onSelection(url)
+        }
     }
 
     private func addRepository(at url: URL) async {

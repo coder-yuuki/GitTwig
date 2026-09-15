@@ -4,7 +4,7 @@ set -euo pipefail
 APP_NAME="GitTwig"
 PRODUCT_NAME="GitTwig"
 BUNDLE_ID="${BUNDLE_ID:-dev.coderyuuki.GitTwig}"
-MARKETING_VERSION="${MARKETING_VERSION:-0.1.0}"
+MARKETING_VERSION="${MARKETING_VERSION:-0.2.0}"
 BUILD_NUMBER="${BUILD_NUMBER:-$(git rev-list --count HEAD 2>/dev/null || printf '1')}"
 CONFIGURATION="${CONFIGURATION:-release}"
 DIST_DIR="${DIST_DIR:-dist}"
@@ -73,6 +73,7 @@ mkdir -p "$APP_BUNDLE/Contents/MacOS" "$APP_BUNDLE/Contents/Resources" "$APP_BUN
 cp ".build/$CONFIGURATION/$PRODUCT_NAME" "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
 chmod 755 "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
 cp "$ICON_SOURCE" "$APP_BUNDLE/Contents/Resources/$APP_NAME.icns"
+cp -R ".build/$CONFIGURATION/GitTwig_GitTwig.bundle" "$APP_BUNDLE/Contents/Resources/"
 cp -R "$SPARKLE_FRAMEWORK_PATH" "$APP_BUNDLE/Contents/Frameworks/"
 
 cat > "$APP_BUNDLE/Contents/Info.plist" <<PLIST

@@ -7,9 +7,7 @@ struct EmptyStateView: View {
         VStack(spacing: 16) {
             Spacer()
 
-            Image(systemName: "point.3.connected.trianglepath.dotted")
-                .font(.system(size: 36))
-                .foregroundStyle(.secondary)
+            TwigAppIcon(size: 80)
 
             VStack(spacing: 6) {
                 Text("No repositories yet.")
@@ -26,6 +24,7 @@ struct EmptyStateView: View {
                 Label("Add Repository", systemImage: "folder.badge.plus")
             }
             .controlSize(.large)
+            .buttonStyle(.borderedProminent)
 
             if let errorMessage = viewModel.errorMessage {
                 Text(errorMessage)

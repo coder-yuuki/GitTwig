@@ -3,10 +3,25 @@ import SwiftUI
 struct SettingsView: View {
     @ObservedObject var viewModel: AppViewModel
 
+    @State private var section = Section.repositories
+
+    private enum Section: String, CaseIterable {
+        case repositories = "Repositories"
+        case general = "General"
+        case about = "About"
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             header
             Divider()
+            Picker("Settings section", selection: $section) {
+                ForEach(Section.allCases, id: \.self) { section in
+                    Text(section.rawValue).tag(section)
+                }
+            }
+            .pickerStyle(.segmented)
+            .padding(12)
             content
             Divider()
             footer
@@ -23,66 +38,90 @@ struct SettingsView: View {
             .buttonStyle(.borderless)
             .help("Back")
 
-            Text("Settings")
+            Label("Settings", systemImage: "slider.horizontal.3")
                 .font(.headline)
+                .foregroundStyle(TwigTheme.leaf)
 
             Spacer()
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 10)
+        .padding(.vertical, 12)
+        .background(TwigTheme.header)
     }
 
     private var content: some View {
         ScrollView(.vertical) {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack {
-                    Text("Repositories")
-                        .font(.subheadline.weight(.semibold))
-
-                    Spacer()
-
-                    Button {
-                        viewModel.addRepository()
+            VStack(alignment: .leading, spacing: 16) {
+                switch section {
+                case .repositories:
+                    HStack {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Label("Repositories · \(viewModel.repositories.count)", systemImage: "folder.fill")
+                                .font(.headline).foregroundStyle(TwigTheme.leaf)
+                            Text("Choose a repository or edit its display name.")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Button { viewModel.addRepository() } label: {
+                            Label("Add", systemImage: "folder.badge.plus")
+                        }
+                    }
+                    if viewModel.repositories.isEmpty {
+                        Label("Add a local Git repository to get started.", systemImage: "folder")
+                            .foregroundStyle(.secondary)
+                            .padding(.vertical, 24)
+                    }
+                    LazyVStack(spacing: 10) {
+                        ForEach(viewModel.repositories) { repository in
+                            SettingsRepositoryRow(viewModel: viewModel, repository: repository)
+                                .padding(12)
+                                .background(RoundedRectangle(cornerRadius: 10)
+                                    .fill(repository.id == viewModel.selectedRepositoryID
+                                          ? TwigTheme.leaf.opacity(0.09)
+                                          : Color(nsColor: .controlBackgroundColor)))
+                                .overlay(RoundedRectangle(cornerRadius: 10)
+                                    .stroke(repository.id == viewModel.selectedRepositoryID
+                                            ? TwigTheme.leaf.opacity(0.4) : Color.primary.opacity(0.07),
+                                            lineWidth: 1))
+                        }
+                    }
+                    if let errorMessage = viewModel.errorMessage {
+                        Text(errorMessage)
+                            .font(.caption).foregroundStyle(.red)
+                            .textSelection(.enabled)
+                    }
+                case .general:
+                    GroupBox {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Stepper(
+                                "Commits per page: \(viewModel.commitLimit)",
+                                value: Binding(
+                                    get: { viewModel.commitLimit },
+                                    set: { viewModel.updateCommitLimit($0) }
+                                ),
+                                in: 5...200,
+                                step: 5
+                            )
+                            Text("Number of commits loaded at a time. Scroll down to load more.")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }.padding(6)
                     } label: {
-                        Label("Add", systemImage: "folder.badge.plus")
+                        Label("Display", systemImage: "rectangle.grid.1x2").foregroundStyle(TwigTheme.sky)
                     }
-                }
-
-                List {
-                    ForEach(viewModel.repositories) { repository in
-                        SettingsRepositoryRow(viewModel: viewModel, repository: repository)
+                    GroupBox {
+                        SoftwareUpdateSettingsView().padding(6)
+                    } label: {
+                        Label("Updates", systemImage: "arrow.triangle.2.circlepath").foregroundStyle(TwigTheme.plum)
                     }
-                }
-                .listStyle(.inset)
-                .frame(minHeight: 160)
-
-                VStack(alignment: .leading, spacing: 6) {
-                    Stepper(
-                        "Commit limit: \(viewModel.commitLimit)",
-                        value: Binding(
-                            get: { viewModel.commitLimit },
-                            set: { viewModel.updateCommitLimit($0) }
-                        ),
-                        in: 5...200,
-                        step: 5
-                    )
-                }
-
-                SoftwareUpdateSettingsView()
-
-                Divider()
-
-                AboutAppView()
-
-                if let errorMessage = viewModel.errorMessage {
-                    Text(errorMessage)
-                        .font(.caption)
-                        .foregroundStyle(.red)
-                        .fixedSize(horizontal: false, vertical: true)
+                case .about:
+                    AboutAppView()
                 }
             }
-            .padding(12)
+            .padding(.horizontal, 14)
+            .padding(.bottom, 14)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .frame(maxHeight: .infinity)
     }
 
     private var footer: some View {
@@ -111,10 +150,7 @@ private struct SoftwareUpdateSettingsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Updates")
-                .font(.subheadline.weight(.semibold))
-
-            HStack(alignment: .center, spacing: 10) {
+            VStack(alignment: .leading, spacing: 12) {
                 Toggle(
                     "Automatically check for updates",
                     isOn: Binding(
@@ -125,8 +161,6 @@ private struct SoftwareUpdateSettingsView: View {
                         }
                     )
                 )
-
-                Spacer()
 
                 Button {
                     updater.updater.checkForUpdates()
@@ -161,8 +195,15 @@ private struct AboutAppView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("About")
-                .font(.subheadline.weight(.semibold))
+            HStack(spacing: 12) {
+                TwigAppIcon(size: 56)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("GitTwig").font(.title2.weight(.bold))
+                    Text("A little closer to your code.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            .padding(.bottom, 8)
 
             VStack(alignment: .leading, spacing: 5) {
                 InfoRow(label: "Version", value: appInfo.versionText)
@@ -277,33 +318,31 @@ private struct SettingsRepositoryRow: View {
                 .font(.caption.monospaced().weight(.semibold))
                 .frame(width: 44, alignment: .trailing)
 
-            VStack(spacing: 2) {
-                Button {
+            Menu {
+                Button("Open in Finder") {
+                    viewModel.openInFinder(repository)
+                }
+                Button("Choose Folder Again…") {
+                    viewModel.chooseAgain(for: repository)
+                }
+                Divider()
+                Button("Move Up") {
                     viewModel.moveRepository(repository, direction: -1)
-                } label: {
-                    Image(systemName: "chevron.up")
-                }
-                .buttonStyle(.borderless)
-                .disabled(isFirst)
-                .help("Move up")
-
-                Button {
+                }.disabled(isFirst)
+                Button("Move Down") {
                     viewModel.moveRepository(repository, direction: 1)
-                } label: {
-                    Image(systemName: "chevron.down")
+                }.disabled(isLast)
+                Divider()
+                Button("Remove from GitTwig", role: .destructive) {
+                    viewModel.removeRepository(repository)
                 }
-                .buttonStyle(.borderless)
-                .disabled(isLast)
-                .help("Move down")
-            }
-
-            Button(role: .destructive) {
-                viewModel.removeRepository(repository)
             } label: {
-                Image(systemName: "trash")
+                Image(systemName: "ellipsis.circle")
             }
-            .buttonStyle(.borderless)
-            .help("Remove repository")
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .help("Repository actions")
+            .disabled(viewModel.syncAction != nil)
         }
         .padding(.vertical, 4)
     }

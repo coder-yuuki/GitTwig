@@ -23,7 +23,8 @@ final class GitService {
         await withRepositoryAccess(repository) { path in
             do {
                 let branchName = try await branchName(at: path)
-                let isDirty = try await isDirty(at: path)
+                let files = try await changedFiles(at: path)
+                let isDirty = !files.isEmpty
                 let divergence = await aheadBehind(at: path)
                 let graph = try await graph(at: path, commitLimit: commitLimit)
 
@@ -37,7 +38,9 @@ final class GitService {
                     graphRows: graph.rows,
                     graphEdges: graph.edges,
                     errorMessage: nil,
-                    updatedAt: Date()
+                    updatedAt: Date(),
+                    changedFiles: files,
+                    upstream: try? await syncTarget(at: path).label
                 )
             } catch {
                 let message = friendlyErrorMessage(error)
@@ -85,6 +88,65 @@ final class GitService {
                 )
             }
         }
+    }
+
+
+    func target(for repository: Repository) async throws -> SyncTarget {
+        let result: Result<SyncTarget, Error> = await withRepositoryAccess(repository) { path in
+            do { return .success(try await syncTarget(at: path)) }
+            catch { return .failure(error) }
+        }
+        return try result.get()
+    }
+
+    private func syncTarget(at path: String) async throws -> SyncTarget {
+        func read(_ args: [String]) async throws -> String {
+            try await runner.runGit(arguments: ["-C", path] + args).stdout
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        let branch = try await read(["symbolic-ref", "--quiet", "--short", "HEAD"])
+        let remote = try await read(["config", "--get", "branch.\(branch).remote"])
+        let ref = try await read(["config", "--get", "branch.\(branch).merge"])
+        guard !remote.isEmpty, !remote.hasPrefix("-"), remote != ".",
+              ref.hasPrefix("refs/heads/"), !ref.contains("\n") else {
+            throw SyncError(message: "Configure a remote tracking branch in your terminal first.")
+        }
+        return SyncTarget(branch: branch, remote: remote, ref: ref)
+    }
+
+    func synchronize(_ action: SyncAction, repository: Repository, expected: SyncTarget) async throws {
+        let result: Result<Void, Error> = await withRepositoryAccess(repository) { path in
+            do {
+                guard try await syncTarget(at: path) == expected else {
+                    throw SyncError(message: "The branch or destination changed. Refresh and try again.")
+                }
+                switch action {
+                case .fetch:
+                    _ = try await runner.runGit(arguments: ["-C", path, "fetch", "--", expected.remote], timeout: 60)
+                case .pull:
+                    guard try await changedFiles(at: path).isEmpty else {
+                        throw SyncError(message: "Commit or stash your changes in your editor before pulling.")
+                    }
+                    _ = try await runner.runGit(arguments: ["-C", path, "fetch", "--", expected.remote, expected.ref], timeout: 60)
+                    guard try await syncTarget(at: path) == expected else {
+                        throw SyncError(message: "The branch changed during fetch. Pull stopped.")
+                    }
+                    guard try await changedFiles(at: path).isEmpty else {
+                        throw SyncError(message: "Working files changed during fetch. Pull stopped.")
+                    }
+                    _ = try await runner.runGit(arguments: ["-C", path, "-c", "merge.autostash=false", "merge", "--ff-only", "FETCH_HEAD"], timeout: 30)
+                case .push:
+                    _ = try await runner.runGit(arguments: ["-C", path, "-c", "push.followTags=false", "-c", "remote.\(expected.remote).mirror=false", "push", "--", expected.remote, "refs/heads/\(expected.branch):\(expected.ref)"], timeout: 60)
+                }
+                return .success(())
+            } catch { return .failure(error) }
+        }
+        try result.get()
+    }
+
+    private func changedFiles(at path: String) async throws -> [ChangedFile] {
+        let result = try await runner.runGit(arguments: ["-C", path, "status", "--porcelain=v1", "-z"], timeout: 8)
+        return ChangedFile.parse(result.stdout)
     }
 
     private func branchName(at path: String) async throws -> String {
@@ -143,6 +205,68 @@ final class GitService {
         } catch {
             return (nil, nil)
         }
+    }
+
+
+    func history(for repository: Repository, revisions: [String]?, offset: Int,
+                 limit: Int, query: String, field: HistorySearchField) async throws -> HistoryPage {
+        let result: Result<HistoryPage, Error> = await withRepositoryAccess(repository) { path in
+            do {
+                var roots = revisions ?? []
+                if revisions == nil {
+                    let refs = try await runner.runGit(arguments: ["-C", path, "rev-parse", "--all"])
+                    roots = refs.stdout.split(whereSeparator: \.isNewline).map(String.init)
+                    if let head = try? await runner.runGit(arguments: ["-C", path, "rev-parse", "--verify", "HEAD"]) {
+                        roots += head.stdout.split(whereSeparator: \.isNewline).map(String.init)
+                    }
+                    roots = Array(Set(roots)).sorted()
+                }
+                guard !roots.isEmpty else { return .success(HistoryPage(rows: [], hasMore: false, revisions: [])) }
+                let term = query.trimmingCharacters(in: .whitespacesAndNewlines)
+                var args = ["-C", path, "log", "--topo-order", "--date=relative",
+                            "--pretty=format:%H%x1f%h%x1f%D%x1f%s%x1f%an%x1f%cr%x1f%P",
+                            "--color=never", "--skip=\(offset)", "-n", "\(limit + 1)"]
+                if !term.isEmpty {
+                    switch field {
+                    case .message: args += ["--fixed-strings", "--regexp-ignore-case", "--grep=" + term]
+                    case .author: args += ["--fixed-strings", "--regexp-ignore-case", "--author=" + term]
+                    case .hash:
+                        guard term.count >= 4, term.count <= 64,
+                              term.allSatisfy({ $0.isHexDigit && $0.isASCII }) else {
+                            throw SyncError(message: "Enter at least 4 hexadecimal characters of a commit hash.")
+                        }
+                        let resolved = try await runner.runGit(arguments: ["-C", path, "rev-parse", "--verify", term + "^{commit}"])
+                        let hash = resolved.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+                        guard offset == 0 else { return .success(HistoryPage(rows: [], hasMore: false, revisions: roots)) }
+                        args += ["--no-walk", hash]
+                    }
+                }
+                if term.isEmpty || field != .hash { args += roots }
+                args += ["--"]
+                let output = try await runner.runGit(arguments: args, timeout: 20)
+                let rows = parseGraphRows(from: output.stdout)
+                return .success(HistoryPage(rows: Array(rows.prefix(limit)), hasMore: rows.count > limit, revisions: roots))
+            } catch { return .failure(error) }
+        }
+        return try result.get()
+    }
+
+    func arrangeHistory(_ rows: [GitGraphRow], filtered: Bool) -> (rows: [GitGraphRow], edges: [GitGraphEdge]) {
+        let indexed = rows.enumerated().map { index, row in
+            var row = row
+            row.rowIndex = index
+            return row
+        }
+        // Search results omit intermediate commits; do not imply that hits are adjacent.
+        if filtered {
+            return (indexed.map { row in
+                var row = row
+                row.column = 0
+                row.colorIndex = 0
+                return row
+            }, [])
+        }
+        return layoutGraphRows(indexed)
     }
 
     private func graph(at path: String, commitLimit: Int) async throws -> (text: String, rows: [GitGraphRow], edges: [GitGraphEdge]) {

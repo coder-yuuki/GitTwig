@@ -1,33 +1,32 @@
 # GitTwig
 
-GitTwig is a tiny read-only Git graph viewer for the macOS menu bar.
+GitTwig is a compact Git graph and sync app for the macOS menu bar.
 
 It lets you register local Git repositories, switch between them from the menu bar, and quickly inspect the current branch, working tree status, ahead/behind counts, and recent commit graph.
 
+## History and search
+
+Scroll to the end of the commit list to load the next page. General settings control the number of commits loaded per page.
+Search by message, author, or commit hash (at least four hexadecimal characters). Message and author searches are case-insensitive literal matches across local history, including commits not yet displayed. Search results also load in pages.
+A paging session keeps its starting revisions so new commits do not shift page boundaries; Refresh starts from the latest state. Search results omit graph connections between nonadjacent matches.
+
 ## Safety
 
-GitTwig only runs read-only Git commands such as `rev-parse`, `branch`, `status`, `rev-list`, and `log`.
+GitTwig shows changed files and supports explicit Fetch, Pull, and Push actions.
+A configured remote tracking branch is required. Push shows its destination for confirmation and sends only the current branch to that tracking branch, without force.
+Pull fetches the tracking branch and applies a fast-forward-only merge. It stops if there are uncommitted changes or divergent history. Resolve these cases in your editor or terminal.
+Operations use your existing Git authentication; terminal prompts are disabled. Errors appear in the app. A timeout does not prove a remote operation failed; fetch to check the resulting state before retrying.
 
-It does not run:
-
-- `commit`
-- `push`
-- `pull`
-- `fetch`
-- `checkout`
-- `merge`
-- `rebase`
-- `reset`
-- `stash`
-- branch creation or deletion commands
+GitTwig does not provide commit, reset, stash, rebase, branch deletion, or force-push controls.
+Ahead/behind counts reflect locally stored remote information; use Fetch to update them.
 
 GitTwig stores repository paths and security-scoped bookmarks locally in `UserDefaults`.
 
 ## Privacy
 
-GitTwig does not collect analytics, upload repository contents, or send repository paths to a server.
+GitTwig does not collect analytics or send repository paths to a telemetry server. User-requested Push sends Git objects to the configured remote.
 
-Network access is used only for Sparkle update checks against this repository's GitHub Releases appcast. Sparkle system profiling is disabled in packaged builds.
+Network access is used for user-requested Git synchronization with configured remotes and Sparkle update checks against this repository's GitHub Releases appcast. Sparkle system profiling is disabled in packaged builds.
 
 ## Requirements
 

@@ -9,6 +9,11 @@ struct GitGraphView: View {
     var onOpenInFinder: (Repository) -> Void
     var onRemove: (Repository) -> Void
 
+    var hasMore = false
+    var loadingMore = false
+    var historyError: String?
+    var onLoadMore: () -> Void = {}
+
     var body: some View {
         ZStack(alignment: .topLeading) {
             Color(nsColor: .textBackgroundColor)
@@ -18,7 +23,10 @@ struct GitGraphView: View {
                     repositoryErrorView(snapshot: snapshot)
                 } else if snapshot.graphRows.isEmpty {
                     ScrollView(.vertical) {
-                        Text(snapshot.graphText)
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text(snapshot.graphText)
+                            if loadingMore || historyError != nil { historyFooter }
+                        }
                             .font(.system(.caption, design: .monospaced))
                             .foregroundColor(.primary)
                             .textSelection(.enabled)
@@ -27,14 +35,26 @@ struct GitGraphView: View {
                     }
                 } else {
                     let edgesByRow = edgesByRow(for: snapshot)
+                    let laneCount = visibleLaneCount(for: snapshot)
                     ScrollView(.vertical) {
                         LazyVStack(spacing: 0) {
                             ForEach(snapshot.graphRows) { row in
                                 GitGraphRowView(
                                     row: row,
-                                    visibleLaneCount: visibleLaneCount(for: snapshot),
+                                    visibleLaneCount: laneCount,
                                     edges: edgesByRow[row.rowIndex] ?? []
                                 )
+                                .equatable()
+                            }
+                            if hasMore || historyError != nil {
+                                historyFooter
+                                    .id(snapshot.graphRows.count)
+                                    .onAppear {
+                                        if historyError == nil { onLoadMore() }
+                                    }
+                            } else {
+                                Text("End of history")
+                                    .font(.caption).foregroundStyle(.secondary).padding(12)
                             }
                         }
                     }
@@ -55,6 +75,21 @@ struct GitGraphView: View {
                     .frame(maxWidth: .infinity, alignment: .trailing)
             }
         }
+    }
+
+    private var historyFooter: some View {
+        VStack(spacing: 8) {
+            if let historyError {
+                Text(historyError).font(.caption).foregroundStyle(.red).textSelection(.enabled)
+                Button("Retry", action: onLoadMore)
+            } else if loadingMore {
+                ProgressView().controlSize(.small)
+            } else {
+                Button("Load more commits", action: onLoadMore)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(12)
     }
 
     private func repositoryErrorView(snapshot: RepositorySnapshot) -> some View {
@@ -118,40 +153,21 @@ struct GitGraphView: View {
     }
 }
 
-private struct GitGraphRowView: View {
+private struct GitGraphRowView: View, Equatable {
     var row: GitGraphRow
     var visibleLaneCount: Int
     var edges: [GitGraphEdge]
 
-    private var rowHeight: CGFloat {
-        row.decorations.isEmpty ? 48 : 66
-    }
-
     var body: some View {
         HStack(alignment: .center, spacing: 10) {
-            GitGraphLinesView(
-                row: row,
-                visibleLaneCount: visibleLaneCount,
-                edges: edges
-            )
-                .frame(width: graphWidth, height: rowHeight)
-
-            Text(row.shortHash)
-                .font(.system(.subheadline, design: .monospaced).weight(row.isHead ? .bold : .medium))
-                .foregroundColor(row.isHead ? .accentColor : .secondary)
-                .lineLimit(1)
-                .frame(width: 62, alignment: .leading)
-
             VStack(alignment: .leading, spacing: 5) {
                 if !row.decorations.isEmpty {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 6) {
-                            ForEach(row.decorations) { decoration in
-                                GitDecorationPill(decoration: decoration)
-                            }
+                    GitDecorationFlowLayout(spacing: 6) {
+                        ForEach(row.decorations) { decoration in
+                            GitDecorationPill(decoration: decoration)
+                                .help(decoration.text)
                         }
                     }
-                    .frame(height: 24)
                 }
 
                 Text(row.subject)
@@ -160,6 +176,10 @@ private struct GitGraphRowView: View {
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .layoutPriority(1)
+                Text("\(row.shortHash) · \(row.authorName)")
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -169,8 +189,16 @@ private struct GitGraphRowView: View {
                 .lineLimit(1)
                 .frame(width: 46, alignment: .trailing)
         }
-        .padding(.horizontal, 10)
-        .frame(height: rowHeight)
+        .padding(.vertical, 10)
+        .padding(.leading, graphWidth + 20)
+        .padding(.trailing, 10)
+        .frame(minHeight: 60)
+        .overlay(alignment: .leading) {
+            GitGraphLinesView(row: row, visibleLaneCount: visibleLaneCount, edges: edges)
+                .frame(width: graphWidth)
+                .padding(.leading, 10)
+                .allowsHitTesting(false)
+        }
         .background(row.isHead ? Color.accentColor.opacity(0.10) : Color.clear)
         .overlay(alignment: .bottom) {
             Color(nsColor: .separatorColor)
@@ -182,6 +210,49 @@ private struct GitGraphRowView: View {
 
     private var graphWidth: CGFloat {
         CGFloat(visibleLaneCount - 1) * 17 + 26
+    }
+}
+
+/// Wrap labels without nested scroll views or hidden branch names.
+struct GitDecorationFlowLayout: Layout {
+    var spacing: CGFloat = 6
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        arrangement(width: proposal.width ?? 400, subviews: subviews).size
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let layout = arrangement(width: bounds.width, subviews: subviews)
+        for (index, point) in layout.positions.enumerated() {
+            subviews[index].place(
+                at: CGPoint(x: bounds.minX + point.x, y: bounds.minY + point.y),
+                anchor: .topLeading,
+                proposal: ProposedViewSize(width: layout.sizes[index].width, height: layout.sizes[index].height)
+            )
+        }
+    }
+
+    private func arrangement(width: CGFloat, subviews: Subviews) -> (size: CGSize, positions: [CGPoint], sizes: [CGSize]) {
+        let width = max(1, width)
+        var x: CGFloat = 0
+        var y: CGFloat = 0
+        var lineHeight: CGFloat = 0
+        var positions: [CGPoint] = []
+        var sizes: [CGSize] = []
+        for view in subviews {
+            let ideal = view.sizeThatFits(.unspecified)
+            let size = view.sizeThatFits(ProposedViewSize(width: min(ideal.width, width), height: nil))
+            if x > 0 && x + size.width > width {
+                x = 0
+                y += lineHeight + spacing
+                lineHeight = 0
+            }
+            positions.append(CGPoint(x: x, y: y))
+            sizes.append(size)
+            x += size.width + spacing
+            lineHeight = max(lineHeight, size.height)
+        }
+        return (CGSize(width: width, height: y + lineHeight), positions, sizes)
     }
 }
 
@@ -294,7 +365,7 @@ private struct GitDecorationPill: View {
             .foregroundColor(foregroundColor)
             .padding(.horizontal, 7)
             .padding(.vertical, 3)
-            .fixedSize(horizontal: true, vertical: false)
+            .fixedSize(horizontal: false, vertical: true)
             .background(
                 RoundedRectangle(cornerRadius: 5, style: .continuous)
                     .fill(backgroundColor)
@@ -307,38 +378,22 @@ private struct GitDecorationPill: View {
 
     private var foregroundColor: Color {
         switch decoration.kind {
-        case .head:
-            return Color(red: 0.25, green: 1.0, blue: 0.47)
-        case .localBranch:
-            return Color(red: 1.0, green: 0.72, blue: 0.90)
-        case .remoteBranch:
-            return .primary
-        case .tag:
-            return Color(red: 1.0, green: 0.80, blue: 0.02)
-        case .other:
-            return .secondary
+        case .head: return TwigTheme.leaf
+        case .localBranch: return TwigTheme.plum
+        case .remoteBranch: return TwigTheme.sky
+        case .tag: return TwigTheme.amber
+        case .other: return .secondary
         }
     }
 
     private var backgroundColor: Color {
-        switch decoration.kind {
-        case .head:
-            return Color(red: 0.04, green: 0.34, blue: 0.20)
-        case .localBranch:
-            return Color(red: 0.42, green: 0.09, blue: 0.28)
-        case .remoteBranch:
-            return Color(nsColor: .controlBackgroundColor)
-        case .tag:
-            return Color(red: 0.38, green: 0.26, blue: 0.03)
-        case .other:
-            return Color(nsColor: .controlBackgroundColor)
-        }
+        foregroundColor.opacity(decoration.kind == .head ? 0.18 : 0.10)
     }
 
     private var borderColor: Color {
         switch decoration.kind {
         case .remoteBranch, .other:
-            return Color(nsColor: .separatorColor)
+            return foregroundColor.opacity(0.25)
         default:
             return .clear
         }
