@@ -46,7 +46,7 @@ swift build -c release --product GitTwig
 scripts/package-macos.sh
 ```
 
-The packaging script creates a `.app`, `.zip`, and `.dmg` under `dist/`.
+The packaging script creates a `.app`, `.zip`, and `.dmg` under `dist/`. It also extracts the ZIP into a temporary folder and runs the packaged executable to verify that its icon loads and renders without the build directory. This check runs before release publication.
 
 For Developer ID signing:
 

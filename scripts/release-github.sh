@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION="${1:-${MARKETING_VERSION:-0.2.0}}"
+VERSION="${1:-${MARKETING_VERSION:-0.2.1}}"
 VERSION="${VERSION#v}"
 TAG="v$VERSION"
 REPO="${GITHUB_REPOSITORY:-coder-yuuki/GitTwig}"

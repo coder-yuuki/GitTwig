@@ -4,7 +4,7 @@ set -euo pipefail
 APP_NAME="GitTwig"
 PRODUCT_NAME="GitTwig"
 BUNDLE_ID="${BUNDLE_ID:-dev.coderyuuki.GitTwig}"
-MARKETING_VERSION="${MARKETING_VERSION:-0.2.0}"
+MARKETING_VERSION="${MARKETING_VERSION:-0.2.1}"
 BUILD_NUMBER="${BUILD_NUMBER:-$(git rev-list --count HEAD 2>/dev/null || printf '1')}"
 CONFIGURATION="${CONFIGURATION:-release}"
 DIST_DIR="${DIST_DIR:-dist}"
@@ -129,6 +129,7 @@ sign_bundle "$APP_BUNDLE"
 codesign --verify --deep --strict --verbose=2 "$APP_BUNDLE"
 
 create_archives
+scripts/verify-packaged-app.sh "$ZIP_PATH"
 
 if [[ "${NOTARIZE:-0}" == "1" ]]; then
     xcrun notarytool submit "$ZIP_PATH" \
